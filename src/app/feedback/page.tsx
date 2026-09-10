@@ -96,7 +96,7 @@ function FeedbackContent() {
     try {
       const payload = {
         brandId: initialData.brandId,
-        storeId: initialData.storeId || (storeIdParam ? parseInt(storeIdParam, 10) : 1),
+        storeId: initialData.storeId || (storeIdParam ? parseInt(storeIdParam, 10) : 0),
         customerPhone: cleanPhone,
         customerName: customerName.trim() || undefined,
         ratingScore: ratingScore,
