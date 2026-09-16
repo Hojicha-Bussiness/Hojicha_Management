@@ -176,11 +176,24 @@ export function parseExcelFile(file: File): Promise<ParseResult> {
           }
         }
 
+        // Safety: if none of the headers were recognised, bail early with a helpful message
+        if (Object.keys(headerMap).length === 0) {
+          return resolve({
+            rows: [],
+            errors: [
+              `Không nhận ra cột nào trong file. Hãy dùng file template mẫu (Download Template). ` +
+              `Các cột hiện tại: ${Object.keys(firstRow).slice(0, 5).join(', ')}...`,
+            ],
+            totalRows: 0,
+          });
+        }
+
         const parsed: ParsedProductRow[] = [];
         const globalErrors: string[] = [];
 
         rawRows.forEach((raw, idx) => {
-          const rowNum = idx + 2; // Excel rows are 1-indexed, row 1 is header
+          // idx=0 → Excel row 2 (row 1 is the header read by sheet_to_json)
+          const rowNum = idx + 2;
           const mapped: RawRow = {};
 
           for (const [rawKey, normalizedKey] of Object.entries(headerMap)) {
@@ -214,7 +227,9 @@ export function parseExcelFile(file: File): Promise<ParseResult> {
           }
 
           const productTypeRaw = parseNumber(mapped.ProductType as string);
-          const generalProductIdRaw = parseNumber(mapped.GeneralProductId as string);
+          // Empty string GeneralProductId means "no parent" → null (not 0)
+          const generalProductIdStr = String(mapped.GeneralProductId ?? '').trim();
+          const generalProductIdRaw = generalProductIdStr === '' ? null : parseNumber(generalProductIdStr);
           const displayOrderRaw = parseNumber(mapped.DisplayOrder as string);
           const priceCogs = parseNumber(mapped.PriceCogs as string);
 

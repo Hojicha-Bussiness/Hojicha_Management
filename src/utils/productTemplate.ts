@@ -90,29 +90,38 @@ const PRODUCT_TYPE_LEGEND = [
 export function downloadProductTemplate(): void {
   const workbook = XLSX.utils.book_new();
 
-  // ── Sheet 1: Products ──────────────────────────────────────────────────────
+  // ── Sheet 1: Products (headers in Row 1 so sheet_to_json works correctly) ──
   const productRows = [
-    // Row 1: column descriptions (soft note row)
-    TEMPLATE_HEADERS.map((h) => HEADER_NOTES[h] ?? ''),
-    // Row 2: header row (actual keys)
+    // Row 1: ACTUAL HEADERS — sheet_to_json uses this row as keys
     TEMPLATE_HEADERS,
-    // Rows 3+: sample data
-    ...SAMPLE_DATA.map((row) => TEMPLATE_HEADERS.map((h) => (row as Record<string, unknown>)[h] ?? '')),
+    // Row 2+: sample data
+    ...SAMPLE_DATA.map((row) =>
+      TEMPLATE_HEADERS.map((h) => (row as Record<string, unknown>)[h] ?? '')
+    ),
   ];
 
   const productSheet = XLSX.utils.aoa_to_sheet(productRows);
 
-  // Style column widths
+  // Column widths based on header + note length
   productSheet['!cols'] = TEMPLATE_HEADERS.map((h) => ({
-    wch: Math.max(h.length + 4, (HEADER_NOTES[h]?.length ?? 0) + 4, 20),
+    wch: Math.max(h.length + 4, (HEADER_NOTES[h]?.length ?? 0) + 4, 22),
   }));
 
-  // Freeze first 2 rows (note + header)
-  productSheet['!freeze'] = { xSplit: 0, ySplit: 2 };
+  // Freeze top header row
+  productSheet['!freeze'] = { xSplit: 0, ySplit: 1 };
 
   XLSX.utils.book_append_sheet(workbook, productSheet, 'Products');
 
-  // ── Sheet 2: ProductType legend ───────────────────────────────────────────
+  // ── Sheet 2: Hướng dẫn (column notes) ────────────────────────────────────
+  const guideRows = [
+    ['Cột', 'Tên trường', 'Mô tả / Hướng dẫn'],
+    ...TEMPLATE_HEADERS.map((h, i) => [String(i + 1), h, HEADER_NOTES[h] ?? '']),
+  ];
+  const guideSheet = XLSX.utils.aoa_to_sheet(guideRows);
+  guideSheet['!cols'] = [{ wch: 6 }, { wch: 22 }, { wch: 70 }];
+  XLSX.utils.book_append_sheet(workbook, guideSheet, 'Hướng dẫn');
+
+  // ── Sheet 3: ProductType legend ───────────────────────────────────────────
   const legendSheet = XLSX.utils.json_to_sheet(PRODUCT_TYPE_LEGEND);
   legendSheet['!cols'] = [{ wch: 10 }, { wch: 18 }, { wch: 40 }];
   XLSX.utils.book_append_sheet(workbook, legendSheet, 'ProductType Legend');
