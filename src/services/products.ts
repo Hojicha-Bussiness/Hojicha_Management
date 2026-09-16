@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { ParsedProductRow } from '@/utils/excelProductParser';
 
 // ─── Type Definitions ────────────────────────────────────────────────
 
@@ -13,6 +14,10 @@ export interface CreateProductRequest {
   IsAvailable?: boolean;
   Active?: boolean;
   ExtraProductCodes?: string[];
+  // Optional extras used during batch import
+  PriceCogs?: number | null;
+  DisplayOrder?: number;
+  IsMostOrdered?: boolean;
 }
 
 export interface UpdateProductRequest {
@@ -94,6 +99,78 @@ export const deleteProduct = async (id: number) => {
   return await apiClient('/products/' + id, {
     method: 'DELETE',
   });
+};
+
+// ─── Batch Import from Excel ──────────────────────────────────────────────────
+
+export interface ImportResult {
+  success: number;
+  failed: number;
+  errors: Array<{ row: number; message: string }>;
+}
+
+export type ImportProgressCallback = (current: number, total: number, rowIndex: number, success: boolean) => void;
+
+export const importProductsFromExcel = async (
+  rows: ParsedProductRow[],
+  storeIds: number[],
+  onProgress?: ImportProgressCallback
+): Promise<ImportResult> => {
+  const result: ImportResult = { success: 0, failed: 0, errors: [] };
+
+  for (let i = 0; i < rows.length; i++) {
+    const { rowIndex, data } = rows[i];
+    try {
+      const payload = new FormData();
+      payload.append('ProductName', data.ProductName);
+      if (data.ProductNameEng) payload.append('ProductNameEng', data.ProductNameEng);
+      payload.append('Price', String(data.Price));
+      if (data.PriceCogs != null) payload.append('PriceCogs', String(data.PriceCogs));
+      payload.append('CatId', String(data.CatId));
+      payload.append('ProductType', String(data.ProductType));
+      if (data.Code) payload.append('Code', data.Code);
+      if (data.GeneralProductId != null) payload.append('GeneralProductId', String(data.GeneralProductId));
+      payload.append('DisplayOrder', String(data.DisplayOrder ?? 0));
+      payload.append('Active', String(data.Active !== false));
+      payload.append('IsAvailable', String(data.IsAvailable !== false));
+      payload.append('ExtraProductCodes', '');
+
+      const createRes = await createProduct(payload);
+      const created =
+        createRes?.data?.data ??
+        createRes?.data?.Data ??
+        createRes?.data;
+      const createdId = created?.id ?? created?.Id ?? created?.productId ?? created?.ProductId;
+
+      if (!createdId) throw new Error('Không lấy được ID sản phẩm vừa tạo');
+
+      // Map to all selected stores
+      if (storeIds.length > 0) {
+        await Promise.all(
+          storeIds.map((storeId) =>
+            createProductDetailMapping({
+              ProductId: Number(createdId),
+              StoreId: storeId,
+              Price: data.Price,
+              DiscountPrice: null,
+              DiscountPercent: null,
+              Active: true,
+            })
+          )
+        );
+      }
+
+      result.success++;
+      onProgress?.(i + 1, rows.length, rowIndex, true);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      result.failed++;
+      result.errors.push({ row: rowIndex, message });
+      onProgress?.(i + 1, rows.length, rowIndex, false);
+    }
+  }
+
+  return result;
 };
 
 // ─── Product Store Mappings (Store Menu) ─────────────────────────────

@@ -9,6 +9,7 @@ import { ColumnDef } from '@tanstack/react-table';
 import { PencilIcon } from '@/icons';
 import { formatCurrency } from '@/utils/currency';
 import { Product, PRODUCT_TYPE_OPTIONS } from '@/types/product';
+import { ProductImportModal } from '@/components/product/ProductImportModal';
 
 const PRODUCT_TYPE_MAP: Record<number, string> = Object.fromEntries(
   PRODUCT_TYPE_OPTIONS.map((o) => [o.value, o.label])
@@ -21,6 +22,7 @@ export default function ProductListPage() {
   const [size, setSize] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const fetchData = useCallback(async (pageNum = page, pageSize = size) => {
     setLoading(true);
@@ -177,12 +179,23 @@ export default function ProductListPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Products Management</h1>
         </div>
-        <Link
-          href="/products/create"
-          className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors font-medium text-sm shadow-sm"
-        >
-          + Create Product
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Import Excel
+          </button>
+          <Link
+            href="/products/create"
+            className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors font-medium text-sm shadow-sm"
+          >
+            + Create Product
+          </Link>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow dark:bg-gray-800 p-6">
@@ -208,6 +221,12 @@ export default function ProductListPage() {
           />
         )}
       </div>
+
+      <ProductImportModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImportComplete={() => fetchData(page, size)}
+      />
     </div>
   );
 }
