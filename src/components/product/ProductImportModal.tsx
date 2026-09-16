@@ -3,16 +3,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { parseExcelFile, ParsedProductRow } from '@/utils/excelProductParser';
+import { parseExcelFile, ParsedProductRow, CategoryLookup, ParentProductLookup } from '@/utils/excelProductParser';
 import { downloadProductTemplate } from '@/utils/productTemplate';
 import {
   importProductsFromExcel,
   ImportResult,
+  getProducts,
 } from '@/services/products';
 import { getStores } from '@/services/stores';
+import { getProductCategories } from '@/services/productCategories';
 import { useAuthStore } from '@/store/authStore';
 import { Store } from '@/types/store';
-import { PRODUCT_TYPE_OPTIONS } from '@/types/product';
+import { PRODUCT_TYPE_OPTIONS, ProductTypeEnum } from '@/types/product';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,13 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
   const [fileName, setFileName] = useState('');
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const [parsedRows, setParsedRows] = useState<ParsedProductRow[]>([]);
+
+  // Lookup data fetched from API
+  const [categories, setCategories] = useState<CategoryLookup[]>([]);
+  const [parentProducts, setParentProducts] = useState<ParentProductLookup[]>([]);
+  const [refDataLoading, setRefDataLoading] = useState(false);
+
+  // Stores
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreIds, setSelectedStoreIds] = useState<number[]>([]);
   const [storesLoading, setStoresLoading] = useState(false);
@@ -102,6 +111,46 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  // ── Fetch reference data (categories + parent products) once when modal opens ──
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setRefDataLoading(true);
+
+    const fetchAll = async () => {
+      try {
+        const [catRes, prodRes] = await Promise.all([
+          getProductCategories(1, 500, brandId ?? undefined),
+          getProducts(1, 500),
+        ]);
+
+        const cats: CategoryLookup[] = (catRes?.data?.items || catRes?.data || []).map(
+          (c: { id: number; categoryName?: string }) => ({
+            id: c.id,
+            name: c.categoryName ?? '',
+          })
+        );
+        setCategories(cats);
+
+        const allProducts = prodRes?.data?.items || prodRes?.data || [];
+        const parents: ParentProductLookup[] = allProducts
+          .filter((p: { productType?: number }) => Number(p.productType) === ProductTypeEnum.General)
+          .map((p: { id: number; productName?: string; code?: string }) => ({
+            id: p.id,
+            name: p.productName ?? '',
+            code: p.code ?? '',
+          }));
+        setParentProducts(parents);
+      } catch {
+        toast.error('Không tải được dữ liệu tham chiếu (danh mục / sản phẩm cha)');
+      } finally {
+        setRefDataLoading(false);
+      }
+    };
+
+    fetchAll();
+  }, [isOpen, brandId]);
 
   // Fetch stores once modal opens
   useEffect(() => {
@@ -134,7 +183,14 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
     }
   }, [isOpen]);
 
-  // ── File handling ────────────────────────────────────────────────────────────
+  // ── Download template with live API data ──────────────────────────────────────
+
+  const handleDownloadTemplate = () => {
+    downloadProductTemplate({ categories, parentProducts });
+    toast.success('Đang tải file template...');
+  };
+
+  // ── File handling ─────────────────────────────────────────────────────────────
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx|xls)$/i)) {
@@ -143,7 +199,7 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
     }
     setFileName(file.name);
     try {
-      const result = await parseExcelFile(file);
+      const result = await parseExcelFile(file, { categories, parentProducts });
       if (result.errors.length > 0) {
         toast.error(result.errors[0]);
         return;
@@ -155,7 +211,7 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Không đọc được file');
     }
-  }, []);
+  }, [categories, parentProducts]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -170,7 +226,7 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
     if (file) handleFile(file);
   };
 
-  // ── Store selection ──────────────────────────────────────────────────────────
+  // ── Store selection ───────────────────────────────────────────────────────────
 
   const toggleStore = (id: number) =>
     setSelectedStoreIds((prev) =>
@@ -182,7 +238,7 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
       prev.length === stores.length ? [] : stores.map((s) => s.id)
     );
 
-  // ── Import ───────────────────────────────────────────────────────────────────
+  // ── Import ────────────────────────────────────────────────────────────────────
 
   const handleImport = async () => {
     setStep('importing');
@@ -208,7 +264,7 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
     }
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   if (!isOpen) return null;
 
@@ -256,17 +312,32 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
           {step === 'upload' && (
             <div className="space-y-5">
               {/* Download template */}
-              <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
-                <span className="text-2xl shrink-0">📋</span>
+              <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+                <span className="text-2xl shrink-0 mt-0.5">📋</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Bước 1: Tải file mẫu</p>
                   <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-                    Tải xuống template Excel, điền thông tin sản phẩm rồi upload lên
+                    File template đã có sẵn danh sách danh mục và sản phẩm cha từ hệ thống
                   </p>
+                  {refDataLoading && (
+                    <p className="text-xs text-blue-400 mt-1 flex items-center gap-1">
+                      <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Đang tải dữ liệu danh mục...
+                    </p>
+                  )}
+                  {!refDataLoading && (
+                    <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">
+                      {categories.length} danh mục · {parentProducts.length} sản phẩm cha
+                    </p>
+                  )}
                 </div>
                 <button
-                  onClick={downloadProductTemplate}
-                  className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+                  onClick={handleDownloadTemplate}
+                  disabled={refDataLoading}
+                  className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -274,6 +345,22 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
                   Tải Template
                 </button>
               </div>
+
+              {/* Reference data preview pills */}
+              {!refDataLoading && (categories.length > 0 || parentProducts.length > 0) && (
+                <div className="flex flex-wrap gap-2">
+                  {categories.slice(0, 6).map((c) => (
+                    <span key={c.id} className="px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg text-xs text-indigo-700 dark:text-indigo-300">
+                      📁 {c.name}
+                    </span>
+                  ))}
+                  {categories.length > 6 && (
+                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-xs text-gray-500">
+                      +{categories.length - 6} danh mục
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Drop zone */}
               <div
@@ -308,11 +395,11 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
 
               {/* Tips */}
               <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                <p className="font-semibold mb-2">💡 Lưu ý quan trọng:</p>
-                <p>• Dòng đầu tiên trong sheet là mô tả (bỏ qua), dòng thứ 2 là header</p>
-                <p>• Các cột bắt buộc: <strong>ProductName, Code, Price, CatId, ProductType</strong></p>
-                <p>• ProductType=7 (Detail) cần có GeneralProductId</p>
-                <p>• Price và CatId phải là số nguyên</p>
+                <p className="font-semibold mb-2">💡 Lưu ý:</p>
+                <p>• Cột <strong>CategoryName</strong>: điền đúng tên danh mục theo sheet "📋 Danh Mục" trong template</p>
+                <p>• Cột <strong>CatId</strong>: nếu điền ID thì ưu tiên hơn CategoryName</p>
+                <p>• Khi <strong>ProductType = 7</strong> (Detail) thì cần điền <strong>ParentProductId</strong></p>
+                <p>• Các cột bắt buộc: ProductName, Code, Price, CategoryName (hoặc CatId), ProductType</p>
               </div>
             </div>
           )}
@@ -349,48 +436,57 @@ export function ProductImportModal({ isOpen, onClose, onImportComplete }: Props)
                         <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">Code</th>
                         <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">Tên sản phẩm</th>
                         <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">Giá</th>
-                        <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">CatId</th>
+                        <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">Danh mục</th>
                         <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">Loại</th>
-                        <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">Trạng thái</th>
+                        <th className="px-3 py-2 text-left text-gray-500 font-semibold uppercase tracking-wide">OK?</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-gray-700">
-                      {parsedRows.map((row) => (
-                        <tr
-                          key={row.rowIndex}
-                          className={`transition-colors ${
-                            row.warnings.length > 0
-                              ? 'bg-amber-50 dark:bg-amber-950/10'
-                              : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
-                          }`}
-                        >
-                          <td className="px-3 py-2 text-gray-400 font-mono">{row.rowIndex}</td>
-                          <td className="px-3 py-2 font-mono text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/50 rounded">
-                            {row.data.Code || '—'}
-                          </td>
-                          <td className="px-3 py-2 font-medium text-gray-900 dark:text-white max-w-[200px] truncate">
-                            {row.data.ProductName}
-                          </td>
-                          <td className="px-3 py-2 text-emerald-600 dark:text-emerald-400 font-semibold">
-                            {row.data.Price.toLocaleString()}đ
-                          </td>
-                          <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{row.data.CatId}</td>
-                          <td className="px-3 py-2">
-                            <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 font-medium">
-                              {PRODUCT_TYPE_MAP[row.data.ProductType] ?? `Type ${row.data.ProductType}`}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            {row.warnings.length > 0 ? (
-                              <span className="text-amber-600 dark:text-amber-400" title={row.warnings.join(', ')}>
-                                ⚠️ {row.warnings.length}
+                      {parsedRows.map((row) => {
+                        const catName = categories.find((c) => c.id === row.data.CatId)?.name;
+                        return (
+                          <tr
+                            key={row.rowIndex}
+                            className={`transition-colors ${
+                              row.warnings.length > 0
+                                ? 'bg-amber-50 dark:bg-amber-950/10'
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                            }`}
+                          >
+                            <td className="px-3 py-2 text-gray-400 font-mono">{row.rowIndex}</td>
+                            <td className="px-3 py-2 font-mono text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/50">
+                              {row.data.Code || '—'}
+                            </td>
+                            <td className="px-3 py-2 font-medium text-gray-900 dark:text-white max-w-[180px] truncate">
+                              {row.data.ProductName}
+                            </td>
+                            <td className="px-3 py-2 text-emerald-600 dark:text-emerald-400 font-semibold">
+                              {row.data.Price.toLocaleString()}đ
+                            </td>
+                            <td className="px-3 py-2">
+                              {catName ? (
+                                <span className="text-indigo-700 dark:text-indigo-300 font-medium">{catName}</span>
+                              ) : (
+                                <span className="text-gray-400">ID: {row.data.CatId}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 font-medium">
+                                {PRODUCT_TYPE_MAP[row.data.ProductType ?? 0] ?? `Type ${row.data.ProductType}`}
                               </span>
-                            ) : (
-                              <span className="text-emerald-500">✓</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.warnings.length > 0 ? (
+                                <span className="text-amber-600 dark:text-amber-400 cursor-help" title={row.warnings.join('\n')}>
+                                  ⚠️ {row.warnings.length}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-500">✓</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

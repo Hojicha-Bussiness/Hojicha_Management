@@ -15,6 +15,17 @@ export interface ParseResult {
   totalRows: number;
 }
 
+export interface CategoryLookup {
+  id: number;
+  name: string;
+}
+
+export interface ParentProductLookup {
+  id: number;
+  name: string;
+  code: string;
+}
+
 // ─── Column name mapping (Excel header → field name) ─────────────────────────
 // Supports both Vietnamese and English headers, and common typos
 
@@ -53,11 +64,17 @@ const COLUMN_ALIASES: Record<string, keyof RawRow> = {
   'gia von': 'PriceCogs',
   'cost price': 'PriceCogs',
 
-  // CatId
+  // CategoryName (new — resolve to CatId via lookup)
+  categoryname: 'CategoryName',
+  'tên danh mục': 'CategoryName',
+  'ten danh muc': 'CategoryName',
+  'category name': 'CategoryName',
+  'danh mục': 'CategoryName',
+
+  // CatId (takes priority over CategoryName)
   catid: 'CatId',
   categoryid: 'CatId',
   'id danh mục': 'CatId',
-  'danh mục': 'CatId',
   'category id': 'CatId',
   category: 'CatId',
 
@@ -68,12 +85,13 @@ const COLUMN_ALIASES: Record<string, keyof RawRow> = {
   'product type': 'ProductType',
   type: 'ProductType',
 
-  // GeneralProductId
-  generalproductid: 'GeneralProductId',
-  'id sản phẩm cha': 'GeneralProductId',
-  parentid: 'GeneralProductId',
-  'parent id': 'GeneralProductId',
-  'id cha': 'GeneralProductId',
+  // ParentProductId (replaces generalproductid in new template)
+  parentproductid: 'ParentProductId',
+  generalproductid: 'ParentProductId',
+  'id sản phẩm cha': 'ParentProductId',
+  parentid: 'ParentProductId',
+  'parent id': 'ParentProductId',
+  'id cha': 'ParentProductId',
 
   // DisplayOrder
   displayorder: 'DisplayOrder',
@@ -106,9 +124,10 @@ interface RawRow {
   Code?: string;
   Price?: number | string;
   PriceCogs?: number | string;
+  CategoryName?: string;       // new: resolve to CatId
   CatId?: number | string;
   ProductType?: number | string;
-  GeneralProductId?: number | string | null;
+  ParentProductId?: number | string | null;  // was GeneralProductId
   DisplayOrder?: number | string;
   Active?: boolean | string | number;
   IsAvailable?: boolean | string | number;
@@ -138,9 +157,65 @@ function normalizeHeader(header: string): keyof RawRow | null {
   return (COLUMN_ALIASES[key] as keyof RawRow) ?? null;
 }
 
+/** Resolve category: prefer CatId (number), fallback to name lookup */
+function resolveCatId(
+  catIdRaw: string | number | undefined,
+  categoryNameRaw: string | undefined,
+  categories: CategoryLookup[]
+): number | null {
+  // 1. Direct numeric CatId
+  const directId = parseNumber(catIdRaw as string);
+  if (directId !== null) return directId;
+
+  // 2. Fallback: name lookup
+  if (categoryNameRaw && categories.length > 0) {
+    const normalized = String(categoryNameRaw).trim().toLowerCase();
+    const found = categories.find(
+      (c) => c.name.trim().toLowerCase() === normalized
+    );
+    if (found) return found.id;
+  }
+
+  return null;
+}
+
+/** Resolve parent product: support numeric ID */
+function resolveParentProductId(
+  raw: string | number | undefined | null,
+  parentProducts: ParentProductLookup[]
+): number | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const asStr = String(raw).trim();
+  if (!asStr) return null;
+
+  // Direct numeric
+  const directId = parseNumber(asStr);
+  if (directId !== null) return directId;
+
+  // Name lookup
+  if (parentProducts.length > 0) {
+    const normalized = asStr.toLowerCase();
+    const found = parentProducts.find(
+      (p) =>
+        p.name.trim().toLowerCase() === normalized ||
+        p.code.trim().toLowerCase() === normalized
+    );
+    if (found) return found.id;
+  }
+
+  return null;
+}
+
 // ─── Main Parser ──────────────────────────────────────────────────────────────
 
-export function parseExcelFile(file: File): Promise<ParseResult> {
+export interface ParseOptions {
+  /** Pass to enable CategoryName → CatId resolution */
+  categories?: CategoryLookup[];
+  /** Pass to enable parent product name/code → ID resolution */
+  parentProducts?: ParentProductLookup[];
+}
+
+export function parseExcelFile(file: File, options: ParseOptions = {}): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -156,10 +231,10 @@ export function parseExcelFile(file: File): Promise<ParseResult> {
         }
 
         const sheet = workbook.Sheets[sheetName];
-        // Convert to array-of-objects using raw headers
+        // Row 1 = headers (real column names), sheet_to_json uses it automatically
         const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
           defval: '',
-          raw: false, // keep as strings for proper boolean/number parsing
+          raw: false,
         });
 
         if (rawRows.length === 0) {
@@ -176,7 +251,7 @@ export function parseExcelFile(file: File): Promise<ParseResult> {
           }
         }
 
-        // Safety: if none of the headers were recognised, bail early with a helpful message
+        // Safety: if none of the headers were recognised, bail early
         if (Object.keys(headerMap).length === 0) {
           return resolve({
             rows: [],
@@ -202,36 +277,40 @@ export function parseExcelFile(file: File): Promise<ParseResult> {
 
           const warnings: string[] = [];
 
+          // ── Resolve CatId ─────────────────────────────────────────────────
+          const catIdRaw = parseNumber(mapped.CatId as string);
+          const resolvedCatId = resolveCatId(
+            mapped.CatId as string,
+            mapped.CategoryName,
+            options.categories ?? []
+          );
+
           // ── Validate required fields ──────────────────────────────────────
           const productName = String(mapped.ProductName || '').trim();
           const code = String(mapped.Code || '').trim();
           const priceRaw = parseNumber(mapped.Price as string);
-          const catIdRaw = parseNumber(mapped.CatId as string);
 
-          if (!productName) {
-            warnings.push(`Dòng ${rowNum}: Thiếu ProductName`);
-          }
-          if (!code) {
-            warnings.push(`Dòng ${rowNum}: Thiếu Code`);
-          }
-          if (priceRaw === null) {
-            warnings.push(`Dòng ${rowNum}: Price không hợp lệ`);
-          }
-          if (catIdRaw === null) {
-            warnings.push(`Dòng ${rowNum}: CatId không hợp lệ`);
+          if (!productName) warnings.push(`Dòng ${rowNum}: Thiếu ProductName`);
+          if (!code) warnings.push(`Dòng ${rowNum}: Thiếu Code`);
+          if (priceRaw === null) warnings.push(`Dòng ${rowNum}: Price không hợp lệ`);
+          if (resolvedCatId === null && catIdRaw === null) {
+            warnings.push(
+              `Dòng ${rowNum}: Không tìm thấy danh mục "${mapped.CategoryName || mapped.CatId}"`
+            );
           }
 
           // Skip rows that are clearly empty
-          if (!productName && !code && priceRaw === null) {
-            return;
-          }
+          if (!productName && !code && priceRaw === null) return;
 
           const productTypeRaw = parseNumber(mapped.ProductType as string);
-          // Empty string GeneralProductId means "no parent" → null (not 0)
-          const generalProductIdStr = String(mapped.GeneralProductId ?? '').trim();
-          const generalProductIdRaw = generalProductIdStr === '' ? null : parseNumber(generalProductIdStr);
           const displayOrderRaw = parseNumber(mapped.DisplayOrder as string);
           const priceCogs = parseNumber(mapped.PriceCogs as string);
+
+          // ParentProductId: empty string → null
+          const parentProductIdRaw = resolveParentProductId(
+            mapped.ParentProductId,
+            options.parentProducts ?? []
+          );
 
           const row: CreateProductRequest = {
             ProductName: productName || 'N/A',
@@ -239,13 +318,13 @@ export function parseExcelFile(file: File): Promise<ParseResult> {
             Code: code || undefined,
             Price: priceRaw ?? 0,
             PriceCogs: priceCogs !== null ? priceCogs : undefined,
-            CatId: catIdRaw ?? 0,
+            CatId: resolvedCatId ?? 0,
             ProductType: productTypeRaw ?? 0,
-            GeneralProductId: generalProductIdRaw ?? null,
+            GeneralProductId: parentProductIdRaw,
             DisplayOrder: displayOrderRaw ?? 0,
             Active: parseBoolean(mapped.Active as string, true),
             IsAvailable: parseBoolean(mapped.IsAvailable as string, true),
-          } as CreateProductRequest & { DisplayOrder?: number; IsMostOrdered?: boolean };
+          };
 
           parsed.push({ rowIndex: rowNum, data: row, warnings });
         });
