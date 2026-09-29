@@ -28,6 +28,9 @@ export interface OrderItem {
   totalAmount: number;
   discount: number;
   finalAmount: number;
+  sourceId?: number | null;
+  sourceType?: number | null;
+  sourceName?: string | null;
   notes?: string;
   itemCount: number;
   orderDetails: OrderDetail[];

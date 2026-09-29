@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getStores } from '@/services/stores';
+import { useAuthStore } from '@/store/authStore';
 
 interface StoreOption {
   id: number;
@@ -26,6 +27,7 @@ export default function CopyStoreMappingsModal({
   onCopy,
 }: CopyStoreMappingsModalProps) {
   const [stores, setStores] = useState<StoreOption[]>([]);
+  const [loadingStores, setLoadingStores] = useState<boolean>(false);
   const [sourceStoreId, setSourceStoreId] = useState<string>('');
   const [targetStoreId, setTargetStoreId] = useState<string>('');
   const [overwriteExisting, setOverwriteExisting] = useState<boolean>(false);
@@ -42,16 +44,20 @@ export default function CopyStoreMappingsModal({
   }, [isOpen]);
 
   const fetchStoreList = async () => {
+    setLoadingStores(true);
     try {
-      const res = await getStores(1, 200);
+      const brandId = useAuthStore.getState().user?.brandId;
+      const res = await getStores(1, 200, brandId || undefined);
       const items = res.data?.items || res.data || [];
       const storeList = items.map((s: any) => ({
         id: s.id || s.storeId,
-        name: s.name || s.shortName || `Cửa hàng ${s.id || s.storeId}`,
+        name: s.name || s.shortName || `Cửa hàng #${s.id || s.storeId}`,
       }));
       setStores(storeList);
     } catch (err) {
       console.error('Lỗi khi tải danh sách cửa hàng:', err);
+    } finally {
+      setLoadingStores(false);
     }
   };
 
@@ -134,58 +140,46 @@ export default function CopyStoreMappingsModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Cửa hàng nguồn (Source Store)
+              Cửa hàng nguồn (Source Store) *
             </label>
-            {stores.length > 0 ? (
-              <select
-                value={sourceStoreId}
-                onChange={(e) => setSourceStoreId(e.target.value)}
-                className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
-              >
-                <option value="">-- Chọn cửa hàng nguồn --</option>
-                {stores.map((s) => (
-                  <option key={`src-${s.id}`} value={s.id}>
-                    [{s.id}] {s.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="number"
-                placeholder="Nhập ID cửa hàng nguồn (vd: 213)"
-                value={sourceStoreId}
-                onChange={(e) => setSourceStoreId(e.target.value)}
-                className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
-              />
-            )}
+            <select
+              value={sourceStoreId}
+              onChange={(e) => setSourceStoreId(e.target.value)}
+              disabled={loadingStores}
+              required
+              className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+            >
+              <option value="">
+                {loadingStores ? 'Đang tải danh sách cửa hàng...' : '-- Chọn cửa hàng nguồn --'}
+              </option>
+              {stores.map((s) => (
+                <option key={`src-${s.id}`} value={s.id}>
+                  {s.name} (Mã: #{s.id})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Cửa hàng đích (Target Store)
+              Cửa hàng đích (Target Store) *
             </label>
-            {stores.length > 0 ? (
-              <select
-                value={targetStoreId}
-                onChange={(e) => setTargetStoreId(e.target.value)}
-                className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
-              >
-                <option value="">-- Chọn cửa hàng đích --</option>
-                {stores.map((s) => (
-                  <option key={`tgt-${s.id}`} value={s.id}>
-                    [{s.id}] {s.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="number"
-                placeholder="Nhập ID cửa hàng đích (vd: 214)"
-                value={targetStoreId}
-                onChange={(e) => setTargetStoreId(e.target.value)}
-                className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
-              />
-            )}
+            <select
+              value={targetStoreId}
+              onChange={(e) => setTargetStoreId(e.target.value)}
+              disabled={loadingStores}
+              required
+              className="w-full p-2.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+            >
+              <option value="">
+                {loadingStores ? 'Đang tải danh sách cửa hàng...' : '-- Chọn cửa hàng đích --'}
+              </option>
+              {stores.map((s) => (
+                <option key={`tgt-${s.id}`} value={s.id}>
+                  {s.name} (Mã: #{s.id})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex items-center gap-2 pt-1">

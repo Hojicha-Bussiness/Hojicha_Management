@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { createStampProgram, CONDITION_TYPE_LABELS, REWARD_TYPE_LABELS, CreateConditionData, CreateRewardTierData } from '@/services/stampPrograms';
 import { getStores } from '@/services/stores';
 import { getProducts } from '@/services/products';
+import { getProductCategories } from '@/services/productCategories';
 import { useAuthStore } from '@/store/authStore';
 
 const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-100';
@@ -18,6 +19,7 @@ export default function CreateStampProgramPage() {
   const [stores, setStores] = useState<any[]>([]);
   const [selectedStoreIds, setSelectedStoreIds] = useState<number[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [showProductPicker, setShowProductPicker] = useState<{ target: 'condition' | 'tier'; index: number } | null>(null);
   const [productSearch, setProductSearch] = useState('');
 
@@ -31,6 +33,9 @@ export default function CreateStampProgramPage() {
     }).catch(() => {});
     getProducts(1, 500).then(res => {
       if (res?.data) setProducts(Array.isArray(res.data) ? res.data : res.data.items || res.data.data || []);
+    }).catch(() => {});
+    getProductCategories(1, 200, brandId || undefined).then(res => {
+      if (res?.data) setCategories(Array.isArray(res.data) ? res.data : res.data.items || []);
     }).catch(() => {});
   }, []);
 
@@ -178,7 +183,18 @@ export default function CreateStampProgramPage() {
                       {c.value ? c.value.split(',').map(code => productName(code)).join(', ') : 'Select products...'}
                     </button>
                   ) : c.conditionType === 1 ? (
-                    <input value={c.value} onChange={e => updateCondition(i, 'value', e.target.value)} className={inputCls} placeholder="Category ID" />
+                    <select
+                      value={c.value}
+                      onChange={e => updateCondition(i, 'value', e.target.value)}
+                      className={selectCls}
+                    >
+                      <option value="">Chọn danh mục sản phẩm...</option>
+                      {categories.map((cat: any) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.cateName || cat.name}
+                        </option>
+                      ))}
+                    </select>
                   ) : c.conditionType === 2 ? (
                     <input type="number" value={c.value} onChange={e => updateCondition(i, 'value', e.target.value)} className={inputCls} placeholder="Min bill amount (VND)" />
                   ) : (

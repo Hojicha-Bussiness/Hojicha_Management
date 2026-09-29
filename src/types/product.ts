@@ -130,6 +130,8 @@ export interface ProductDetailMapping {
   discountPrice?: number;
   discountPercent?: number;
   active?: boolean;
+  productName?: string;
+  storeName?: string;
   product?: Product;
   store?: Store;
 }

@@ -13,6 +13,8 @@ import {
   TaskIcon,
   GridIcon
 } from '@/icons';
+import { getSourceOrders } from '@/services/sourceOrders';
+import { SourceOrder } from '@/types/sourceOrder';
 
 type BrandStore = {
   id?: number;
@@ -79,7 +81,11 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<number | ''>('');
   const [typeFilter, setTypeFilter] = useState<number | ''>('');
   const [paymentFilter, setPaymentFilter] = useState<number | ''>('');
+  const [sourceFilter, setSourceFilter] = useState<number | ''>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Source Orders for filter and badges
+  const [sourceOrders, setSourceOrders] = useState<SourceOrder[]>([]);
 
   // Payment Types for filter
   const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);
@@ -168,6 +174,22 @@ export default function OrdersPage() {
     fetchPaymentTypes();
   }, []);
 
+  // Fetch source orders for filter and badge resolution
+  useEffect(() => {
+    const fetchSourceOrders = async () => {
+      try {
+        const brandId = useAuthStore.getState().user?.brandId;
+        const res = await getSourceOrders(brandId ? Number(brandId) : undefined);
+        if (res && res.data) {
+          setSourceOrders(res.data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch source orders:', err);
+      }
+    };
+    fetchSourceOrders();
+  }, []);
+
   const loadOrders = useCallback(async (pageNum: number, pageSize: number) => {
     setOrdersLoading(true);
     try {
@@ -214,9 +236,12 @@ export default function OrdersPage() {
       const matchesPayment = paymentFilter !== ''
         ? order.payments?.some((payment) => Number(payment.type) === Number(paymentFilter))
         : true;
-      return matchesSearch && matchesType && matchesPayment;
+      const matchesSource = sourceFilter !== ''
+        ? (order.sourceId === Number(sourceFilter) || order.sourceType === Number(sourceFilter))
+        : true;
+      return matchesSearch && matchesType && matchesPayment && matchesSource;
     });
-  }, [orders, searchTerm, typeFilter, paymentFilter]);
+  }, [orders, searchTerm, typeFilter, paymentFilter, sourceFilter]);
 
   const handleViewDetail = (order: OrderItem) => {
     setSelectedOrder(order);
@@ -261,7 +286,7 @@ export default function OrdersPage() {
 
       {/* ── Filters Section ──────────────────────────────────────── */}
       <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-5 shadow-xl shadow-gray-100/50 dark:shadow-none space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* Store Selector */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
@@ -329,6 +354,28 @@ export default function OrdersPage() {
               {Object.entries(ORDER_TYPE_MAPPINGS).map(([code, config]) => (
                 <option key={code} value={code}>
                   {config.text}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Source Order Filter */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+              Nguồn Đơn (Kênh)
+            </label>
+            <select
+              value={sourceFilter}
+              onChange={(e) => {
+                setSourceFilter(e.target.value !== '' ? Number(e.target.value) : '');
+                setPage(1);
+              }}
+              className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all outline-none"
+            >
+              <option value="">Tất cả kênh bán</option>
+              {sourceOrders.map((so) => (
+                <option key={so.id} value={so.id}>
+                  {so.name} ({so.code})
                 </option>
               ))}
             </select>
@@ -442,6 +489,7 @@ export default function OrdersPage() {
                   <th className="px-4 py-3.5 text-center font-semibold border-r border-[#009045]">STT</th>
                   <th className="px-4 py-3.5 text-left font-semibold border-r border-[#009045]">Mã Hóa Đơn</th>
                   <th className="px-4 py-3.5 text-center font-semibold border-r border-[#009045]">Loại Đơn</th>
+                  <th className="px-4 py-3.5 text-center font-semibold border-r border-[#009045]">Nguồn Đơn</th>
                   <th className="px-4 py-3.5 text-center font-semibold border-r border-[#009045]">Trạng Thái</th>
                   <th className="px-4 py-3.5 text-left font-semibold border-r border-[#009045]">Thanh Toán</th>
                   <th className="px-4 py-3.5 text-left font-semibold border-r border-[#009045]">Thời Gian Đặt</th>
@@ -469,6 +517,30 @@ export default function OrdersPage() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${typeConf.badgeClass}`}>
                           {typeConf.text}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center border-r dark:border-gray-800">
+                        {(() => {
+                          const matchedSource = sourceOrders.find(
+                            (s) => s.id === order.sourceId || s.id === order.sourceType
+                          );
+                          const sourceName = matchedSource?.name || order.sourceName || 'Tại quầy';
+                          const code = matchedSource?.code?.toUpperCase() || '';
+
+                          let badgeStyle = 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800';
+                          if (code.includes('GRAB') || sourceName.toLowerCase().includes('grab')) {
+                            badgeStyle = 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800';
+                          } else if (code.includes('SHOPEE') || sourceName.toLowerCase().includes('shopee')) {
+                            badgeStyle = 'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800';
+                          } else if (code.includes('MANG_DI') || sourceName.toLowerCase().includes('mang đi') || sourceName.toLowerCase().includes('mang về')) {
+                            badgeStyle = 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800';
+                          }
+
+                          return (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${badgeStyle}`}>
+                              {sourceName}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-center border-r dark:border-gray-800">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${statusConf.badgeClass}`}>
@@ -565,7 +637,7 @@ export default function OrdersPage() {
             </div>
 
             {/* Main Info Blocks */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
               <div className="bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800/80 rounded-xl p-3.5 flex flex-col gap-1">
                 <span className="text-2xs font-bold text-gray-400 uppercase tracking-wide">Trạng Thái</span>
                 <span className={`inline-flex self-start items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${STATUS_MAPPINGS[selectedOrder.orderStatus]?.badgeClass}`}>
@@ -577,6 +649,13 @@ export default function OrdersPage() {
                 <span className="text-2xs font-bold text-gray-400 uppercase tracking-wide">Loại Hình</span>
                 <span className={`inline-flex self-start items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${ORDER_TYPE_MAPPINGS[selectedOrder.orderType]?.badgeClass}`}>
                   {ORDER_TYPE_MAPPINGS[selectedOrder.orderType]?.text || 'Khác'}
+                </span>
+              </div>
+
+              <div className="bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800/80 rounded-xl p-3.5 flex flex-col gap-1">
+                <span className="text-2xs font-bold text-gray-400 uppercase tracking-wide">Nguồn Đơn</span>
+                <span className="text-xs font-bold text-primary truncate">
+                  {sourceOrders.find((s) => s.id === selectedOrder.sourceId || s.id === selectedOrder.sourceType)?.name || selectedOrder.sourceName || 'Tại quầy'}
                 </span>
               </div>
 

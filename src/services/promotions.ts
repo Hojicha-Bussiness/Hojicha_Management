@@ -212,3 +212,9 @@ export const copyPromotionStoreMappings = async (data: CopyPromotionStoreMapping
   });
 };
 
+export const addStoreMapping = async (promotionId: number, storeId: number) => {
+  return await apiClient(`/promotions/${promotionId}/store-mappings`, {
+    method: 'POST',
+    body: JSON.stringify({ storeId }),
+  });
+};

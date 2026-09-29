@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { createProductCategory, getProductCategories } from '@/services/productCategories';
+import { getStores, Store } from '@/services/stores';
 import { useAuthStore } from '@/store/authStore';
 import { ProductCategory } from '@/types/product';
 
@@ -11,6 +12,7 @@ export default function CreateCategoryPage() {
   const router = useRouter();
 
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -21,13 +23,15 @@ export default function CreateCategoryPage() {
     try {
       const brandId = useAuthStore.getState().user?.brandId;
 
-      const res = await getProductCategories(
-        1,
-        100,
-        brandId || undefined
-      );
+      const [res, storesRes] = await Promise.all([
+        getProductCategories(1, 100, brandId || undefined),
+        getStores(1, 1000, brandId || undefined),
+      ]);
 
       setCategories(res.data.items || res.data);
+      if (storesRes && storesRes.data) {
+        setStores(storesRes.data.items || storesRes.data);
+      }
     } catch (error) {
       console.error(error);
     }
@@ -209,11 +213,22 @@ export default function CreateCategoryPage() {
                 type="number"
               />
 
-              <Input
-                label="Store ID"
-                name="StoreId"
-                type="number"
-              />
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Cửa Hàng (Store)
+                </label>
+                <select
+                  name="StoreId"
+                  className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                >
+                  <option value="">Áp dụng tất cả cửa hàng (Mặc định)</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <Input
                 label="VAT (%)"

@@ -13,6 +13,7 @@ import {
 } from '@/services/stampPrograms';
 import { getStores } from '@/services/stores';
 import { getProducts } from '@/services/products';
+import { getProductCategories } from '@/services/productCategories';
 import { useAuthStore } from '@/store/authStore';
 
 const inputCls =
@@ -36,6 +37,7 @@ export default function StampProgramDetailPage() {
 
   const [stores, setStores] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [selectedStoreIds, setSelectedStoreIds] = useState<number[]>([]);
   const [conditions, setConditions] = useState<CreateConditionData[]>([]);
   const [rewardTiers, setRewardTiers] = useState<CreateRewardTierData[]>([]);
@@ -51,6 +53,14 @@ export default function StampProgramDetailPage() {
     getProducts(1, 500)
       .then(res => {
         if (res?.data) setProducts(Array.isArray(res.data) ? res.data : res.data.items || res.data.data || []);
+      })
+      .catch(() => {});
+    getProductCategories(1, 200, brandId || undefined)
+      .then(res => {
+        if (res?.data) {
+          const list = Array.isArray(res.data) ? res.data : (res.data.items || res.data.data || []);
+          setCategories(list);
+        }
       })
       .catch(() => {});
   }, [id]);
@@ -151,6 +161,11 @@ export default function StampProgramDetailPage() {
   const productName = (code: string) => {
     const p = products.find((p: any) => p.code === code);
     return p ? p.productName : code;
+  };
+
+  const categoryName = (catId: string | number) => {
+    const c = categories.find((cat: any) => String(cat.id) === String(catId));
+    return c ? (c.cateName || c.name || `Danh mục #${catId}`) : `Danh mục #${catId}`;
   };
 
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -266,14 +281,23 @@ export default function StampProgramDetailPage() {
             <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-800">
               <h3 className={sectionTitleCls}>Conditions</h3>
               <div className="space-y-1">
-                {program.conditions.map((c: any, i: number) => (
-                  <div
-                    key={i}
-                    className="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800/50"
-                  >
-                    {CONDITION_TYPE_LABELS[+c.conditionType] || c.conditionType}: {c.value}
-                  </div>
-                ))}
+                {program.conditions.map((c: any, i: number) => {
+                  const typeNum = Number(c.conditionType);
+                  let displayVal = c.value;
+                  if (typeNum === 0) {
+                    displayVal = c.value ? c.value.split(',').map((code: string) => productName(code.trim())).join(', ') : '—';
+                  } else if (typeNum === 1) {
+                    displayVal = categoryName(c.value);
+                  }
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800/50"
+                    >
+                      {CONDITION_TYPE_LABELS[typeNum] || c.conditionType}: {displayVal}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -405,12 +429,18 @@ export default function StampProgramDetailPage() {
                           : 'Select products...'}
                       </button>
                     ) : c.conditionType === 1 ? (
-                      <input
+                      <select
                         value={c.value}
                         onChange={e => updateCondition(i, 'value', e.target.value)}
-                        className={inputCls}
-                        placeholder="Category ID"
-                      />
+                        className={selectCls}
+                      >
+                        <option value="">-- Chọn danh mục sản phẩm --</option>
+                        {categories.map((cat: any) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.cateName || cat.name || `Danh mục #${cat.id}`}
+                          </option>
+                        ))}
+                      </select>
                     ) : c.conditionType === 2 ? (
                       <input
                         type="number"

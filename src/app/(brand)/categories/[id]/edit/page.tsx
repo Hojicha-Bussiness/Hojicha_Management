@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { getProductCategoryById, updateProductCategory, getProductCategories } from '@/services/productCategories';
+import { getStores, Store } from '@/services/stores';
 import { useAuthStore } from '@/store/authStore';
 
 export default function EditCategoryPage({ params }: { params: Promise<{ id: string }> }) {
@@ -12,6 +13,7 @@ export default function EditCategoryPage({ params }: { params: Promise<{ id: str
 
   const [category, setCategory] = useState<any>(null);
   const [categories, setCategories] = useState<any[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,9 +24,10 @@ export default function EditCategoryPage({ params }: { params: Promise<{ id: str
   const fetchCategoryAndCategories = async () => {
     try {
       const brandId = useAuthStore.getState().user?.brandId;
-      const [categoryRes, categoriesRes] = await Promise.all([
+      const [categoryRes, categoriesRes, storesRes] = await Promise.all([
         getProductCategoryById(resolvedParams.id, brandId || undefined),
-        getProductCategories(1, 100, brandId || undefined)
+        getProductCategories(1, 100, brandId || undefined),
+        getStores(1, 1000, brandId || undefined)
       ]);
 
       if (categoryRes && categoryRes.data) {
@@ -32,6 +35,9 @@ export default function EditCategoryPage({ params }: { params: Promise<{ id: str
       }
       if (categoriesRes && categoriesRes.data) {
         setCategories(categoriesRes.data.items || categoriesRes.data || []);
+      }
+      if (storesRes && storesRes.data) {
+        setStores(storesRes.data.items || storesRes.data || []);
       }
     } catch (error) {
       console.error('Error fetching category data:', error);
@@ -249,12 +255,23 @@ export default function EditCategoryPage({ params }: { params: Promise<{ id: str
                 defaultValue={category?.position != null ? String(category.position) : ''}
               />
 
-              <Input
-                label="Store ID"
-                name="StoreId"
-                type="number"
-                defaultValue={category?.storeId != null ? String(category.storeId) : ''}
-              />
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Cửa Hàng (Store)
+                </label>
+                <select
+                  name="StoreId"
+                  defaultValue={category?.storeId != null ? String(category.storeId) : ''}
+                  className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                >
+                  <option value="">Áp dụng tất cả cửa hàng (Mặc định)</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <Input
                 label="VAT (%)"

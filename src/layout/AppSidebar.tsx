@@ -115,6 +115,7 @@ const AppSidebar: React.FC = () => {
               { name: "Mục tiêu KPI", path: "/target-settings" },
               { name: "Cấu hình đánh giá", path: "/feedback-settings" },
               { name: "Phương thức thanh toán", path: "/payment-types" },
+              { name: "Kênh bán (Nguồn đơn)", path: "/source-orders" },
               { name: "Danh mục chi phí", path: "/cost-categories" },
             ],
           },
