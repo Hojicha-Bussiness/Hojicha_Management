@@ -4,6 +4,8 @@ export interface BrandLoyaltyTier {
   id: number;
   brandId: number;
   tierName: string;
+  imageUrl?: string | null;
+  badgeImageUrl?: string | null;
   minSpend: number;
   earnMultiplier: number;
   stampThreshold: number;
@@ -38,6 +40,36 @@ export interface ApiResponse<T = unknown> {
 }
 
 const endpoint = '/admin/brand-loyalty-tiers';
+
+export interface UploadTierArtworkOptions {
+  badgeImage?: File | null;
+  removeImage?: boolean;
+  removeBadgeImage?: boolean;
+}
+
+export const uploadTierImage = (
+  id: number,
+  image?: File | null,
+  options?: UploadTierArtworkOptions,
+) => {
+  const form = new FormData();
+  if (image) {
+    form.append('Image', image);
+  }
+  if (options?.badgeImage) {
+    form.append('BadgeImage', options.badgeImage);
+  }
+  if (options?.removeImage) {
+    form.append('RemoveImage', 'true');
+  }
+  if (options?.removeBadgeImage) {
+    form.append('RemoveBadgeImage', 'true');
+  }
+  return apiClient<ApiResponse<BrandLoyaltyTier>>(`${endpoint}/${id}/image`, {
+    method: 'POST',
+    body: form,
+  });
+};
 
 export const getBrandLoyaltyTiers = async (brandId?: number) => {
   const query = brandId ? `?brandId=${encodeURIComponent(String(brandId))}` : '';

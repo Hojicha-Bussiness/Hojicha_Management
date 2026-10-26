@@ -12,11 +12,14 @@ import {
   deleteBrandLoyaltyTier,
   getBrandLoyaltyTiers,
   updateBrandLoyaltyTier,
+  uploadTierImage,
 } from '@/services/loyaltyTiers';
 import { getLoyaltyRewardPolicies, type LoyaltyRewardPolicy } from '@/services/loyaltyRewards';
 import { getBrandProducts } from '@/services/loyaltyProducts';
+import { optimizeImageForUpload } from '@/services/imageOptimizer';
 import { RewardPolicyEditor } from './components/RewardPolicyEditor';
 import { TierPreviewCard } from './components/TierPreviewCard';
+import { TierImageEditor } from './components/TierImageEditor';
 import type { LoyaltyProductOption } from '@/services/loyaltyProductContracts';
 import {
   CheckLineIcon,
@@ -198,6 +201,10 @@ export default function LoyaltyTiersPage() {
   const [loadError, setLoadError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTier, setEditingTier] = useState<BrandLoyaltyTier | null>(null);
+  const [tierImageFile, setTierImageFile] = useState<File | null>(null);
+  const [tierBadgeFile, setTierBadgeFile] = useState<File | null>(null);
+  const [removeTierImage, setRemoveTierImage] = useState(false);
+  const [removeTierBadgeImage, setRemoveTierBadgeImage] = useState(false);
   const [form, setForm] = useState<TierFormState>({ ...emptyForm });
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -269,6 +276,10 @@ export default function LoyaltyTiersPage() {
   );
 
   const openCreateModal = () => {
+    setTierImageFile(null);
+    setTierBadgeFile(null);
+    setRemoveTierImage(false);
+    setRemoveTierBadgeImage(false);
     setEditingTier(null);
     setForm({ ...emptyForm, sortOrder: String((tiers.length + 1) * 10) });
     setFormError('');
@@ -276,6 +287,10 @@ export default function LoyaltyTiersPage() {
   };
 
   const openEditModal = (tier: BrandLoyaltyTier) => {
+    setTierImageFile(null);
+    setTierBadgeFile(null);
+    setRemoveTierImage(false);
+    setRemoveTierBadgeImage(false);
     setEditingTier(tier);
     setForm(getTierForm(tier));
     setFormError('');
@@ -345,6 +360,7 @@ export default function LoyaltyTiersPage() {
 
     setSubmitting(true);
     setFormError('');
+    const wasEditing = Boolean(editingTier);
     try {
       const payload = toPayload(form);
       const response = editingTier
@@ -355,8 +371,60 @@ export default function LoyaltyTiersPage() {
         throw new Error(response.message || 'Không thể lưu bậc hạng.');
       }
 
+      const savedTier = response.data ?? editingTier;
+      if (savedTier) {
+        setEditingTier(savedTier);
+      }
+
+      const hasArtworkChanges = Boolean(
+        tierImageFile ||
+          tierBadgeFile ||
+          removeTierImage ||
+          removeTierBadgeImage,
+      );
+
+      if (savedTier && hasArtworkChanges) {
+        try {
+          const optimizedCard = tierImageFile
+            ? await optimizeImageForUpload(tierImageFile, { preset: 'card' })
+            : null;
+          const optimizedBadge = tierBadgeFile
+            ? await optimizeImageForUpload(tierBadgeFile, { preset: 'badge' })
+            : null;
+
+          const imageResponse = await uploadTierImage(
+            savedTier.id,
+            optimizedCard,
+            {
+              badgeImage: optimizedBadge,
+              removeImage: removeTierImage,
+              removeBadgeImage: removeTierBadgeImage,
+            },
+          );
+          if (imageResponse.status !== 200) {
+            throw new Error(
+              imageResponse.message ||
+                'Đã lưu thông tin bậc hạng nhưng chưa tải được ảnh hạng. Bấm Lưu thay đổi để thử lại phần ảnh.',
+            );
+          }
+          setTierImageFile(null);
+          setTierBadgeFile(null);
+          setRemoveTierImage(false);
+          setRemoveTierBadgeImage(false);
+        } catch (artworkError: unknown) {
+          await fetchTiers();
+          setFormError(
+            getErrorMessage(
+              artworkError,
+              'Đã lưu thông tin bậc hạng nhưng tải ảnh chưa thành công. Bấm Lưu thay đổi để thử lại phần ảnh.',
+            ),
+          );
+          return;
+        }
+      }
+
       toast.success(
-        editingTier ? 'Đã cập nhật bậc hạng.' : 'Đã tạo bậc hạng mới.',
+        wasEditing ? 'Đã cập nhật bậc hạng.' : 'Đã tạo bậc hạng mới.',
       );
       setIsModalOpen(false);
       await fetchTiers();
@@ -819,6 +887,20 @@ export default function LoyaltyTiersPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+          <TierImageEditor
+            key={editingTier?.id ?? 'new-tier'}
+            tier={editingTier}
+            tierNamePreview={form.tierName}
+            file={tierImageFile}
+            onFileChange={setTierImageFile}
+            badgeFile={tierBadgeFile}
+            onBadgeFileChange={setTierBadgeFile}
+            removeImage={removeTierImage}
+            onRemoveImageChange={setRemoveTierImage}
+            removeBadgeImage={removeTierBadgeImage}
+            onRemoveBadgeImageChange={setRemoveTierBadgeImage}
+            disabled={submitting}
+          />
           {/* GROUP 1: BASIC INFORMATION */}
           <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-4 dark:border-gray-800 dark:bg-gray-800/40 space-y-4">
             <div className="flex items-center gap-2 text-theme-sm font-bold text-gray-900 dark:text-white">

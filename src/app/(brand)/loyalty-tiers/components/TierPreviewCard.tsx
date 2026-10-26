@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- signed brand artwork URLs */
 
 import React from 'react';
 import type { BrandLoyaltyTier } from '@/services/loyaltyTiers';
@@ -83,6 +84,20 @@ export function TierPreviewCard({
 
   return (
     <div className="group flex flex-col rounded-xl border border-gray-200 bg-white shadow-theme-sm transition-all duration-200 hover:shadow-theme-md dark:border-gray-800 dark:bg-gray-800 overflow-hidden">
+      <div className="relative aspect-[2.1] overflow-hidden bg-[#B8C4E8]">
+        {tier.imageUrl && <img src={tier.imageUrl} alt={`Ảnh hạng ${tier.tierName}`} className="h-full w-full object-cover" />}
+        <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 shadow-sm backdrop-blur-sm">
+          {tier.badgeImageUrl && (
+            <img
+              src={tier.badgeImageUrl}
+              alt={`Huy hiệu ${tier.tierName}`}
+              className="h-4 w-4 object-contain"
+            />
+          )}
+          <span className="font-bold text-gray-900 text-xs">{tier.tierName}</span>
+        </div>
+        {!tier.imageUrl && <span className="absolute bottom-3 left-4 text-xs text-gray-700">Chưa cấu hình ảnh nền</span>}
+      </div>
       {/* 1. VIP CARD HEADER - CLEAN SOLID COLOR */}
       <div className={`p-5 text-white ${theme.solidBg}`}>
         {/* Header Badges */}

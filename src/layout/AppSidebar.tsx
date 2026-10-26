@@ -112,7 +112,7 @@ const AppSidebar: React.FC = () => {
               { name: "Tích Stamp", path: "/stamp-programs" },
               { name: "Đặc quyền thành viên", path: "/loyalty-tiers" },
               { name: "Đổi thưởng bằng điểm", path: "/point-rewards" },
-              { name: "Ảnh Home Mobile", path: "/home-media" },
+              { name: "Giao diện Mobile", path: "/home-media" },
             ],
           },
           {
