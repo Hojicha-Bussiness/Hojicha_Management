@@ -110,12 +110,15 @@ export default function CreateSpecialOfferPage() {
     const applyFromTime = fd.get('applyFromTime') as string;
     const applyToTime = fd.get('applyToTime') as string;
 
+    const fromDateStr = fd.get('fromDate') as string;
+    const toDateStr = fd.get('toDate') as string;
+
     const payload: CreateSpecialOfferData = {
       displayName: fd.get('displayName') as string,
       description: (fd.get('description') as string) || undefined,
       sortOrder: Number(fd.get('sortOrder')) || 0,
-      fromDate: (fd.get('fromDate') as string) ? new Date(fd.get('fromDate') as string).toISOString() : undefined,
-      toDate: (fd.get('toDate') as string) ? new Date(fd.get('toDate') as string).toISOString() : undefined,
+      fromDate: fromDateStr ? (fromDateStr.includes('T') ? new Date(fromDateStr).toISOString() : new Date(`${fromDateStr}T00:00:00.000Z`).toISOString()) : undefined,
+      toDate: toDateStr ? (toDateStr.includes('T') ? new Date(toDateStr).toISOString() : new Date(`${toDateStr}T23:59:59.999Z`).toISOString()) : undefined,
       applyFromTime: applyFromTime ? parseInt(applyFromTime.replace(':', ''), 10) : undefined,
       applyToTime: applyToTime ? parseInt(applyToTime.replace(':', ''), 10) : undefined,
       isRecurring: fd.get('isRecurring') === 'on',

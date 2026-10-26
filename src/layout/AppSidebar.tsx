@@ -11,6 +11,7 @@ import {
   BoxCubeIcon,
   PlugInIcon,
   DocsIcon,
+  DollarLineIcon,
 } from "../icons/index";
 import { useAuthStore } from "@/store/authStore";
 
@@ -67,6 +68,11 @@ const AppSidebar: React.FC = () => {
             name: "Special Offers",
             path: "/special-offers",
           },
+          {
+            icon: <DollarLineIcon />,
+            name: "Mã Voucher",
+            path: "/vouchers",
+          },
         ];
 
       case "BrandManager":
@@ -101,10 +107,12 @@ const AppSidebar: React.FC = () => {
               { name: "Cấu hình giá sản phẩm", path: "/product-detail-mappings" },
               { name: "Danh mục", path: "/categories" },
               { name: "Khuyến mãi", path: "/promotions" },
+              { name: "Mã Voucher", path: "/vouchers" },
               { name: "Ưu đãi đặc biệt", path: "/special-offers" },
               { name: "Tích Stamp", path: "/stamp-programs" },
               { name: "Đặc quyền thành viên", path: "/loyalty-tiers" },
               { name: "Đổi thưởng bằng điểm", path: "/point-rewards" },
+              { name: "Ảnh Home Mobile", path: "/home-media" },
             ],
           },
           {
