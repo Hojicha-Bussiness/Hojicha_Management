@@ -3,6 +3,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
+import { getBrandLoyaltyTiers } from '@/services/loyaltyTiers';
 import {
   addHomeMediaHero,
   deleteHomeMediaItem,
@@ -32,6 +33,14 @@ const groupLabels: Record<string, string> = {
   quickAction: 'Thao tác nhanh',
   promotion: 'Chương trình ưu đãi',
   about: 'Về chúng tôi',
+  tier: 'Ảnh thẻ hạng — Account',
+  account: 'Ảnh tiện ích — Account',
+};
+
+const accountLabels: Record<string, string> = {
+  'account-coupons': 'Kho ưu đãi',
+  'account-credits': 'Đổi voucher',
+  'account-referrals': 'Giới thiệu bạn bè',
 };
 
 const actionTypeLabels: Record<string, string> = {
@@ -48,6 +57,7 @@ export default function HomeMediaPage() {
   const [draft, setDraft] = useState<HomeMediaDraft | null>(null);
   const [items, setItems] = useState<ItemState[]>([]);
   const [options, setOptions] = useState<HomeMediaActionOption[]>([]);
+  const [tierNames, setTierNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -59,10 +69,14 @@ export default function HomeMediaPage() {
     setError('');
     try {
       await ensureHomeMediaDraft();
-      const [draftResponse, optionsResponse] = await Promise.all([
+      const [draftResponse, optionsResponse, tiersResponse] = await Promise.all([
         getHomeMediaDraft(),
         getHomeMediaActionOptions(),
+        getBrandLoyaltyTiers(),
       ]);
+      setTierNames(Object.fromEntries(
+        (tiersResponse.data ?? []).map((tier) => [`tier-card-${tier.id}`, tier.tierName]),
+      ));
       const nextDraft = draftResponse.data;
       setDraft(nextDraft ?? null);
       setItems(
@@ -287,7 +301,7 @@ export default function HomeMediaPage() {
     <main className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Ảnh Home Mobile</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Ảnh Home Mobile & thẻ hạng</h1>
           <p className="mt-1 text-sm text-gray-500">BrandManager đổi ảnh, chọn hành động khi bấm và Publish riêng.</p>
         </div>
         <div className="flex gap-2">
@@ -309,6 +323,8 @@ export default function HomeMediaPage() {
                   <div>
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{groupLabels[group] ?? group}</h2>
                     <span className="text-sm text-gray-500">{groupItems.length} ảnh</span>
+                    {group === 'tier' && <p className="mt-1 text-xs text-gray-500">Ảnh nền tại Account và màn hình quyền lợi. Thay ảnh, Lưu Draft rồi Publish để áp dụng.</p>}
+                    {group === 'account' && <p className="mt-1 text-xs text-gray-500">Thay ảnh nền các ô tiện ích tại Account. Nội dung, số liệu và hành động bấm được giữ nguyên.</p>}
                   </div>
                   {group === 'hero' && (
                     <button disabled={busy || !draft} onClick={() => void addHero()} className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">+ Thêm Hero</button>
@@ -325,14 +341,14 @@ export default function HomeMediaPage() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="mb-2 flex items-center justify-between gap-2">
-                              <span className="truncate font-semibold text-gray-800 dark:text-white">{item.contentKey}</span>
+                              <span className="truncate font-semibold text-gray-800 dark:text-white">{tierNames[item.contentKey] ?? accountLabels[item.contentKey] ?? item.contentKey}</span>
                               <span className="shrink-0 text-xs text-gray-500">Draft</span>
                             </div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-200">
                               Ảnh mới
                               <input type="file" accept=".jpg,.jpeg,.png,.webp" onChange={(event: ChangeEvent<HTMLInputElement>) => updateItem(item.id, { selectedFile: event.target.files?.[0] ?? null })} className="mt-1 block w-full text-xs" />
                             </label>
-                            <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            {group !== 'tier' && group !== 'account' && <div className="mt-2 grid gap-2 md:grid-cols-2">
                               <label className="text-xs font-medium text-gray-700 dark:text-gray-200">
                                 Khi bấm vào ảnh
                                 <select value={item.actionType} onChange={(event) => updateItem(item.id, { actionType: event.target.value, actionTargetKey: '', actionTargetId: '' })} className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs">
@@ -348,10 +364,10 @@ export default function HomeMediaPage() {
                                   </select>
                                 </label>
                               )}
-                            </div>
+                            </div>}
                             {item.actionType === 'ExternalHttps' && <input value={item.actionExternalUrl} onChange={(event) => updateItem(item.id, { actionExternalUrl: event.target.value })} placeholder="https://..." className="mt-2 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs" />}
                             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs text-gray-500">Hành động: {actionLabel(item)}</span>
+                              <span className="text-xs text-gray-500">{group === 'tier' ? 'Ảnh nền thẻ hạng thành viên' : group === 'account' ? 'Ảnh nền tiện ích Account' : `Hành động: ${actionLabel(item)}`}</span>
                               <div className="flex gap-2">
                                 {group === 'hero' && <button disabled={busy} onClick={() => void removeHero(item)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 disabled:opacity-50">Xóa</button>}
                                 {item.dirty && <span className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">Chưa lưu</span>}
@@ -404,6 +420,32 @@ export default function HomeMediaPage() {
                     <section className="p-3">
                       <div className="mb-2 text-[11px] font-semibold text-gray-700">Về chúng tôi</div>
                       <div className="space-y-2">{previewItems('about').map((item) => <div key={item.id}>{renderPreviewImage(item, 'h-24 w-full rounded-xl')}<p className="mt-1 truncate text-[10px] text-gray-500">{actionLabel(item)}</p></div>)}</div>
+                    </section>
+                  )}
+                  {previewItems('tier').length > 0 && (
+                    <section className="p-3">
+                      <div className="mb-2 text-[11px] font-semibold text-gray-700">Account — Thẻ hạng</div>
+                      <div className="space-y-2">
+                        {previewItems('tier').map((item) => (
+                          <div key={item.id} className="relative h-36 overflow-hidden rounded-xl bg-[#B8C4E8]">
+                            {imageUrl(item) && <img src={imageUrl(item)} alt={tierNames[item.contentKey] ?? item.contentKey} className="h-full w-full object-cover" />}
+                            <span className="absolute left-4 top-4 text-sm font-bold text-gray-900">{tierNames[item.contentKey] ?? item.contentKey}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {previewItems('account').length > 0 && (
+                    <section className="p-3">
+                      <div className="mb-2 text-[11px] font-semibold text-gray-700">Account — Tiện ích</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {previewItems('account').map((item) => (
+                          <div key={item.id} className={`relative overflow-hidden rounded-xl bg-white ${item.contentKey === 'account-coupons' ? 'row-span-2 min-h-36' : 'h-16'}`}>
+                            {imageUrl(item) && <img src={imageUrl(item)} alt={accountLabels[item.contentKey]} className="absolute inset-0 h-full w-full object-cover" />}
+                            <div className="relative p-2 text-[11px] font-bold text-gray-700">{accountLabels[item.contentKey]}<div className="text-lg">0</div></div>
+                          </div>
+                        ))}
+                      </div>
                     </section>
                   )}
                 </div>
