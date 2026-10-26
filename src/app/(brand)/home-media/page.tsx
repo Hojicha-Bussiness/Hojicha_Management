@@ -20,6 +20,7 @@ import {
 
 type ItemState = Omit<HomeMediaItem, 'actionTargetKey' | 'actionTargetId' | 'actionExternalUrl'> & {
   isNew: boolean;
+  dirty: boolean;
   selectedFile: File | null;
   actionTargetKey: string;
   actionTargetId: string;
@@ -68,6 +69,7 @@ export default function HomeMediaPage() {
         (nextDraft?.items ?? []).map((item) => ({
           ...item,
           isNew: false,
+          dirty: false,
           selectedFile: null,
           actionTargetKey: item.actionTargetKey ?? '',
           actionTargetId: item.actionTargetId?.toString() ?? '',
@@ -135,40 +137,60 @@ export default function HomeMediaPage() {
   }
 
   const updateItem = (id: number, patch: Partial<ItemState>) => {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch, dirty: true } : item)));
   };
 
-  const saveItem = async (item: ItemState) => {
+  const saveAll = async () => {
     if (!draft) return;
-    if (item.isNew && !item.selectedFile) {
-      setError('Vui lòng chọn ảnh Hero trước khi Lưu Draft.');
+
+    const pendingItems = items.filter((item) => item.dirty);
+    const incompleteItem = pendingItems.find((item) => item.isNew && !item.selectedFile);
+    if (incompleteItem) {
+      setError(`Vui lòng chọn ảnh cho ${incompleteItem.contentKey} trước khi Lưu Draft.`);
       return;
     }
+
+    if (pendingItems.length === 0) {
+      setMessage('Không có thay đổi nào cần lưu.');
+      setError('');
+      return;
+    }
+
     setBusy(true);
     setMessage('');
     setError('');
     try {
-      if (item.isNew) {
-        await addHomeMediaHero(
-          item.selectedFile as File,
-          item.actionType,
-          item.actionTargetKey,
-          item.actionTargetId,
-          item.actionExternalUrl,
-          draft.concurrencyToken,
-        );
-      } else {
-        await updateHomeMediaItem(
-          item,
-          item.selectedFile,
-          item.actionType,
-          item.actionTargetKey,
-          item.actionTargetId,
-          item.actionExternalUrl,
-          draft.concurrencyToken,
-        );
+      let currentDraft = draft;
+
+      // Each request increments DraftRevision, so refresh the token between items.
+      for (const item of pendingItems) {
+        if (item.isNew) {
+          await addHomeMediaHero(
+            item.selectedFile as File,
+            item.actionType,
+            item.actionTargetKey,
+            item.actionTargetId,
+            item.actionExternalUrl,
+            currentDraft.concurrencyToken,
+          );
+        } else {
+          await updateHomeMediaItem(
+            item,
+            item.selectedFile,
+            item.actionType,
+            item.actionTargetKey,
+            item.actionTargetId,
+            item.actionExternalUrl,
+            currentDraft.concurrencyToken,
+          );
+        }
+
+        const refreshedDraft = await getHomeMediaDraft();
+        if (!refreshedDraft.data) throw new Error('Không nhận được Draft mới sau khi lưu ảnh.');
+        currentDraft = refreshedDraft.data;
       }
-      setMessage(`Đã lưu Draft: ${item.contentKey}`);
+
+      setMessage(`Đã lưu Draft toàn bộ ${pendingItems.length} ảnh/thay đổi.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không lưu được ảnh.');
@@ -192,6 +214,7 @@ export default function HomeMediaPage() {
       actionExternalUrl: '',
       isActive: true,
       isNew: true,
+      dirty: true,
       selectedFile: null,
     }]);
     setMessage('Đã thêm một ô Hero. Chọn ảnh trong ô mới rồi bấm Lưu Draft.');
@@ -269,6 +292,7 @@ export default function HomeMediaPage() {
         </div>
         <div className="flex gap-2">
           <button disabled={busy || !draft} onClick={() => void publish(true)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold disabled:opacity-50">Gỡ Publish</button>
+          <button disabled={busy || !draft} onClick={() => void saveAll()} className="rounded-lg border border-brand-500 px-4 py-2 text-sm font-semibold text-brand-600 disabled:opacity-50">Lưu Draft</button>
           <button disabled={busy || !draft} onClick={() => void publish()} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Publish</button>
         </div>
       </div>
@@ -330,7 +354,7 @@ export default function HomeMediaPage() {
                               <span className="text-xs text-gray-500">Hành động: {actionLabel(item)}</span>
                               <div className="flex gap-2">
                                 {group === 'hero' && <button disabled={busy} onClick={() => void removeHero(item)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 disabled:opacity-50">Xóa</button>}
-                                <button disabled={busy} onClick={() => void saveItem(item)} className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Lưu Draft</button>
+                                {item.dirty && <span className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">Chưa lưu</span>}
                               </div>
                             </div>
                           </div>
